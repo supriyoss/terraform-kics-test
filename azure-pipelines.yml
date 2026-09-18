@@ -69,7 +69,7 @@ jobs:
             --arg branch "$(Build.SourceBranchName)" \
             --arg commit "$(Build.SourceVersion)" \
             --arg pipeline "$(Build.DefinitionName)" \
-            --arg pipelineId "$(Build.DefinitionId)" \
+            --arg pipelineId "$(Build.DefinitionID)" \
             --arg buildId "$(Build.BuildId)" \
             --arg buildNumber "$(Build.BuildNumber)" \
             --arg buildUrl "$(System.CollectionUri)$(System.TeamProject)/_build/results?buildId=$(Build.BuildId)" \
