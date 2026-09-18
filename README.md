@@ -25,7 +25,25 @@ Each scan requests JSON, HTML, and SARIF output:
 | JSON | `kics-json` build artifact | Machine-readable report for inspection or backup |
 | JSON | Azure Blob Storage, optional | Central reporting and aggregation |
 
-Install and configure the [SARIF Azure DevOps extension](https://github.com/Microsoft/sarif-azuredevops-extension) if SARIF findings should be rendered in the pipeline’s scan-results experience. Publishing the file alone does not parse or display the findings.
+### Viewing SARIF findings
+
+`PublishBuildArtifacts@1` stores the SARIF file, but it does not create a scan view by itself. To render the findings:
+
+1. Install the [SARIF SAST Scans Tab extension](https://marketplace.visualstudio.com/items?itemName=sariftools.sarif-viewer-build-tab) in the Azure DevOps organization. An organization administrator may be required.
+2. Run the pipeline again after the extension is installed. The artifact must be named `CodeAnalysisLogs`; this pipeline already uses that name.
+3. Open the completed pipeline run and select the **Scans** tab on the build results page. Open **SARIF SAST Scans Tab** if that is the label shown by the installed extension.
+
+The extension is separate from [GitHub Advanced Security for Azure DevOps](https://learn.microsoft.com/azure/devops/repos/security/github-advanced-security-code-scanning). Advanced Security does not automatically ingest arbitrary KICS SARIF files from a build artifact. Publishing the file alone only makes it downloadable until the SARIF viewer extension is installed.
+
+### Management summary
+
+The pipeline also publishes a Markdown summary to the run's **Summary** tab. It shows:
+
+- Total findings and files scanned
+- Findings grouped by severity
+- Findings grouped by KICS category, such as Access Control, Encryption, and Networking and Firewall
+
+Category totals count each affected file reported by KICS. The summary is intended for management reporting; use the SARIF **Scans** tab or HTML report for finding-level investigation.
 
 ## Optional Blob Upload
 
