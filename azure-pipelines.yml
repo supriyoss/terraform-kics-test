@@ -13,112 +13,115 @@ variables:
   KICS_STORAGE_ACCOUNT: ''
   KICS_STORAGE_CONTAINER: ''
 
-steps:
-  - checkout: self
+jobs:
+  - job: KicsSecurityScan
+    displayName: KICS Security Scan
+    steps:
+      - checkout: self
 
-  - bash: |
-      set -euo pipefail
+      - bash: |
+          set -euo pipefail
 
-      mkdir -p "$(KICS_OUTPUT)"
+          mkdir -p "$(KICS_OUTPUT)"
 
-      docker run --rm \
-        --volume "$(Build.SourcesDirectory):/path:ro" \
-        --volume "$(KICS_OUTPUT):/output" \
-        "$(KICS_IMAGE)" scan \
-        --ci \
-        --no-color \
-        --path /path \
-        --output-path /output \
-        --output-name results \
-        --report-formats json,html,sarif
-    displayName: Run KICS scan
-    continueOnError: true
+          docker run --rm \
+            --volume "$(Build.SourcesDirectory):/path:ro" \
+            --volume "$(KICS_OUTPUT):/output" \
+            "$(KICS_IMAGE)" scan \
+            --ci \
+            --no-color \
+            --path /path \
+            --output-path /output \
+            --output-name results \
+            --report-formats json,html,sarif
+        displayName: Run KICS scan
+        continueOnError: true
 
-  - bash: |
-      set -euo pipefail
+      - bash: |
+          set -euo pipefail
 
-      summary_file="$(KICS_OUTPUT)/management-summary.md"
+          summary_file="$(KICS_OUTPUT)/management-summary.md"
 
-      if [[ ! -f "$(KICS_OUTPUT)/results.json" ]]; then
-        printf '%s\n' '# KICS Management Summary' '' 'The KICS JSON report was not generated.' > "$summary_file"
-        echo "##vso[task.uploadsummary]$summary_file"
-        exit 0
-      fi
+          if [[ ! -f "$(KICS_OUTPUT)/results.json" ]]; then
+            printf '%s\n' '# KICS Management Summary' '' 'The KICS JSON report was not generated.' > "$summary_file"
+            echo "##vso[task.uploadsummary]$summary_file"
+            exit 0
+          fi
 
-      {
-        echo '# KICS Management Summary'
-        echo
-        echo "- **Total findings:** $(jq -r '.total_counter // 0' "$(KICS_OUTPUT)/results.json")"
-        echo "- **Files scanned:** $(jq -r '.files_scanned // 0' "$(KICS_OUTPUT)/results.json")"
-        echo
-        echo '## Findings by Severity'
-        echo
-        echo '| Severity | Findings |'
-        echo '| --- | ---: |'
-        jq -r '.severity_counters // {} | to_entries | sort_by(.key)[] | "| \(.key) | \(.value) |"' "$(KICS_OUTPUT)/results.json"
-        echo
-        echo '## Findings by Category'
-        echo
-        echo '| Category | Findings |'
-        echo '| --- | ---: |'
-        jq -r '
-          [.queries[]? | {category: (.category // "Uncategorized"), findings: ((.files // []) | length)}]
-          | group_by(.category)
-          | map({category: .[0].category, findings: (map(.findings) | add)})
-          | sort_by(-.findings, .category)
-          | .[]
-          | "| \(.category) | \(.findings) |"
-        ' "$(KICS_OUTPUT)/results.json"
-      } > "$summary_file"
+          {
+            echo '# KICS Management Summary'
+            echo
+            echo "- **Total findings:** $(jq -r '.total_counter // 0' "$(KICS_OUTPUT)/results.json")"
+            echo "- **Files scanned:** $(jq -r '.files_scanned // 0' "$(KICS_OUTPUT)/results.json")"
+            echo
+            echo '## Findings by Severity'
+            echo
+            echo '| Severity | Findings |'
+            echo '| --- | ---: |'
+            jq -r '.severity_counters // {} | to_entries | sort_by(.key)[] | "| \(.key) | \(.value) |"' "$(KICS_OUTPUT)/results.json"
+            echo
+            echo '## Findings by Category'
+            echo
+            echo '| Category | Findings |'
+            echo '| --- | ---: |'
+            jq -r '
+              [.queries[]? | {category: (.category // "Uncategorized"), findings: ((.files // []) | length)}]
+              | group_by(.category)
+              | map({category: .[0].category, findings: (map(.findings) | add)})
+              | sort_by(-.findings, .category)
+              | .[]
+              | "| \(.category) | \(.findings) |"
+            ' "$(KICS_OUTPUT)/results.json"
+          } > "$summary_file"
 
-      echo "##vso[task.uploadsummary]$summary_file"
-    condition: always()
-    continueOnError: true
-    displayName: Publish KICS management summary
+          echo "##vso[task.uploadsummary]$summary_file"
+        condition: always()
+        continueOnError: true
+        displayName: Publish KICS management summary
 
-  - task: PublishBuildArtifacts@1
-    condition: always()
-    inputs:
-      pathToPublish: $(KICS_OUTPUT)/results.html
-      artifactName: kics-html
-      publishLocation: Container
-    displayName: Publish KICS HTML report
+      - task: PublishBuildArtifacts@1
+        condition: always()
+        inputs:
+          pathToPublish: $(KICS_OUTPUT)/results.html
+          artifactName: kics-html
+          publishLocation: Container
+        displayName: Publish KICS HTML report
 
-  - task: PublishBuildArtifacts@1
-    condition: always()
-    inputs:
-      pathToPublish: $(KICS_OUTPUT)/results.sarif
-      artifactName: CodeAnalysisLogs
-      publishLocation: Container
-    displayName: Publish KICS SARIF for Azure DevOps scan results
+      - task: PublishBuildArtifacts@1
+        condition: always()
+        inputs:
+          pathToPublish: $(KICS_OUTPUT)/results.sarif
+          artifactName: CodeAnalysisLogs
+          publishLocation: Container
+        displayName: Publish KICS SARIF for Azure DevOps scan results
 
-  - task: PublishBuildArtifacts@1
-    condition: always()
-    inputs:
-      pathToPublish: $(KICS_OUTPUT)/results.json
-      artifactName: kics-json
-      publishLocation: Container
-    displayName: Publish KICS JSON report
+      - task: PublishBuildArtifacts@1
+        condition: always()
+        inputs:
+          pathToPublish: $(KICS_OUTPUT)/results.json
+          artifactName: kics-json
+          publishLocation: Container
+        displayName: Publish KICS JSON report
 
-  - task: AzureCLI@2
-    condition: and(always(), eq(variables['KICS_UPLOAD_JSON'], 'true'))
-    inputs:
-      azureSubscription: $(AZURE_SERVICE_CONNECTION)
-      scriptType: bash
-      scriptLocation: inlineScript
-      inlineScript: |
-        set -euo pipefail
+      - task: AzureCLI@2
+        condition: and(always(), eq(variables['KICS_UPLOAD_JSON'], 'true'))
+        inputs:
+          azureSubscription: $(AZURE_SERVICE_CONNECTION)
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            set -euo pipefail
 
-        az storage blob upload \
-          --auth-mode login \
-          --account-name "$(KICS_STORAGE_ACCOUNT)" \
-          --container-name "$(KICS_STORAGE_CONTAINER)" \
-          --name "kics/$(Build.DefinitionName)/$(Build.BuildNumber)/results.json" \
-          --file "$(KICS_OUTPUT)/results.json" \
-          --overwrite true
-    displayName: Upload KICS JSON report to Blob Storage
+            az storage blob upload \
+              --auth-mode login \
+              --account-name "$(KICS_STORAGE_ACCOUNT)" \
+              --container-name "$(KICS_STORAGE_CONTAINER)" \
+              --name "kics/$(Build.DefinitionName)/$(Build.BuildNumber)/results.json" \
+              --file "$(KICS_OUTPUT)/results.json" \
+              --overwrite true
+        displayName: Upload KICS JSON report to Blob Storage
 
-  - bash: |
-      echo "Blob Storage is not configured; keeping the JSON report in the pipeline workspace."
-    condition: and(always(), ne(variables['KICS_UPLOAD_JSON'], 'true'))
-    displayName: Skip Blob Storage upload (test mode)
+      - bash: |
+          echo "Blob Storage is not configured; keeping the JSON report in the pipeline workspace."
+        condition: and(always(), ne(variables['KICS_UPLOAD_JSON'], 'true'))
+        displayName: Skip Blob Storage upload (test mode)
