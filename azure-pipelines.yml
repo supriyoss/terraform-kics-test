@@ -7,9 +7,8 @@ pool: ADO-Pool
 variables:
   KICS_IMAGE: checkmarx/kics:latest
   KICS_OUTPUT: $(Build.ArtifactStagingDirectory)/kics
-  KICS_UPLOAD_JSON: 'true'
-  # Define KICS_STORAGE_CONTAINER in pipeline variables or a variable group.
-  # Define BLOB_CONNECTION_STRING as a secret pipeline variable.
+  # Define AZURE_SERVICE_CONNECTION, KICS_STORAGE_ACCOUNT, and
+  # KICS_STORAGE_CONTAINER in pipeline variables or a variable group.
 
 jobs:
   - job: KicsSecurityScan
@@ -22,6 +21,7 @@ jobs:
 
           mkdir -p "$(KICS_OUTPUT)"
 
+          set +e
           docker run --rm \
             --volume "$(Build.SourcesDirectory):/path:ro" \
             --volume "$(KICS_OUTPUT):/output" \
@@ -32,19 +32,35 @@ jobs:
             --output-path /output \
             --output-name results \
             --report-formats json,html,sarif
+          kics_exit_code=$?
+          set -e
+
+          printf '%s\n' "$kics_exit_code" > "$(KICS_OUTPUT)/.kics-exit-code"
+          echo "KICS scan exited with code $kics_exit_code."
         displayName: Run KICS scan
-        continueOnError: true
 
       - bash: |
           set -euo pipefail
 
           KICS_JSON="$(KICS_OUTPUT)/results.json"
           SUMMARY="$(KICS_OUTPUT)/summary.json"
+          scan_exit_code="$(cat "$(KICS_OUTPUT)/.kics-exit-code")"
+          PIPELINE_NAME="$(Build.DefinitionName)"
+          SAFE_PIPELINE_NAME="$(echo "$PIPELINE_NAME" | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
+          SAFE_PIPELINE_NAME="${SAFE_PIPELINE_NAME:-pipeline}"
 
           if [[ ! -f "$KICS_JSON" ]]; then
             echo "KICS JSON result not found: $KICS_JSON"
             exit 1
           fi
+
+          case "$scan_exit_code" in
+            0|20|30|40|50|60) ;;
+            *)
+              echo "KICS execution/configuration failed with exit code $scan_exit_code; summary will not be uploaded." >&2
+              exit 1
+              ;;
+          esac
 
           jq \
             --arg organization "$(System.CollectionUri)" \
@@ -53,9 +69,11 @@ jobs:
             --arg branch "$(Build.SourceBranchName)" \
             --arg commit "$(Build.SourceVersion)" \
             --arg pipeline "$(Build.DefinitionName)" \
+            --arg pipelineId "$(Build.DefinitionId)" \
             --arg buildId "$(Build.BuildId)" \
             --arg buildNumber "$(Build.BuildNumber)" \
             --arg buildUrl "$(System.CollectionUri)$(System.TeamProject)/_build/results?buildId=$(Build.BuildId)" \
+            --arg pipelineName "$SAFE_PIPELINE_NAME" \
             '{
               organization: $organization,
               project: $project,
@@ -63,10 +81,13 @@ jobs:
               branch: $branch,
               commit: $commit,
               pipeline: $pipeline,
+              pipelineId: ($pipelineId | tonumber),
               buildId: $buildId,
               buildNumber: $buildNumber,
               buildUrl: $buildUrl,
+              pipelineName: $pipelineName,
               kicsVersion: .kics_version,
+              scanTime: (.end // .start),
               scanStart: .start,
               scanEnd: .end,
               filesScanned: .files_scanned,
@@ -77,13 +98,14 @@ jobs:
               low: (.severity_counters.LOW // 0),
               info: (.severity_counters.INFO // 0),
               totalFindings: (.total_counter // 0),
-              securityGate: (if (.total_counter // 0) > 0 then "FAILED" else "PASSED" end)
+              securityGate: (if ((.severity_counters.CRITICAL // 0) > 0 or (.severity_counters.HIGH // 0) > 0) then "FAILED" else "PASSED" end)
             }' \
             "$KICS_JSON" > "$SUMMARY"
 
+          echo "##vso[task.setvariable variable=KICS_SUMMARY_READY]true"
           echo 'Generated KICS summary:'
           cat "$SUMMARY"
-        condition: always()
+        condition: succeededOrFailed()
         displayName: Generate KICS Scan Summary
 
       - task: PublishBuildArtifacts@1
@@ -110,26 +132,46 @@ jobs:
           publishLocation: Container
         displayName: Publish KICS JSON report
 
+      - task: AzureCLI@2
+        condition: and(succeededOrFailed(), eq(variables['KICS_SUMMARY_READY'], 'true'))
+        inputs:
+          azureSubscription: $(AZURE_SERVICE_CONNECTION)
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            set -euo pipefail
+
+            PIPELINE_NAME="$(Build.DefinitionName)"
+            SAFE_PIPELINE_NAME="$(echo "$PIPELINE_NAME" | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
+            SAFE_PIPELINE_NAME="${SAFE_PIPELINE_NAME:-pipeline}"
+
+            az storage blob upload \
+              --auth-mode login \
+              --account-name "$(KICS_STORAGE_ACCOUNT)" \
+              --container-name "$(KICS_STORAGE_CONTAINER)" \
+              --name "current/$SAFE_PIPELINE_NAME/summary.json" \
+              --file "$(KICS_OUTPUT)/summary.json" \
+              --overwrite true
+        displayName: Upload current KICS summary to Blob Storage
+
       - bash: |
           set -euo pipefail
 
-          if [[ -z "${BLOB_CONNECTION_STRING:-}" ]]; then
-            echo 'No Blob connection string was supplied.' >&2
+          scan_exit_code="$(cat "$(KICS_OUTPUT)/.kics-exit-code")"
+          total_findings="$(jq -r '.totalFindings // 0' "$(KICS_OUTPUT)/summary.json")"
+          critical="$(jq -r '.critical // 0' "$(KICS_OUTPUT)/summary.json")"
+          high="$(jq -r '.high // 0' "$(KICS_OUTPUT)/summary.json")"
+
+          if [[ "$scan_exit_code" -eq 70 || "$scan_exit_code" -eq 126 || "$scan_exit_code" -eq 130 ]]; then
+            echo "KICS execution failed with exit code $scan_exit_code; reporting is not a security finding result." >&2
             exit 1
           fi
 
-          az storage blob upload \
-            --connection-string "$BLOB_CONNECTION_STRING" \
-            --container-name "$(KICS_STORAGE_CONTAINER)" \
-            --name "kics/$(Build.DefinitionName)/$(Build.BuildNumber)/summary.json" \
-            --file "$(KICS_OUTPUT)/summary.json" \
-            --overwrite true
-        env:
-          BLOB_CONNECTION_STRING: $(BLOB_CONNECTION_STRING)
-        condition: and(always(), eq(variables['KICS_UPLOAD_JSON'], 'true'))
-        displayName: Upload KICS JSON report to Blob Storage
+          if [[ "$critical" -gt 0 || "$high" -gt 0 ]]; then
+            echo "KICS security gate failed: critical=$critical, high=$high, total=$total_findings."
+            exit 1
+          fi
 
-      - bash: |
-          echo "Blob Storage is not configured; keeping the JSON report in the pipeline workspace."
-        condition: and(always(), ne(variables['KICS_UPLOAD_JSON'], 'true'))
-        displayName: Skip Blob Storage upload (test mode)
+          echo "KICS security gate passed: critical=$critical, high=$high, total=$total_findings."
+        condition: and(succeededOrFailed(), eq(variables['KICS_SUMMARY_READY'], 'true'))
+        displayName: Enforce KICS security gate

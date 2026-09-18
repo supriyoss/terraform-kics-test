@@ -37,22 +37,22 @@ The extension is separate from [GitHub Advanced Security for Azure DevOps](https
 
 ### Management summary
 
-After every scan, the pipeline generates `summary.json` with Azure DevOps metadata, KICS version, scan start/end times, files scanned and parsed, severity totals, total findings, and a `securityGate` outcome. The gate is `FAILED` when KICS reports one or more findings and `PASSED` when no findings are reported. The summary is intended for centralized management reporting; use the SARIF **Scans** tab or HTML report for finding-level investigation.
+After every scan, the pipeline generates `summary.json` with Azure DevOps metadata, KICS version, scan time and start/end times, files scanned and parsed, severity totals, total findings, and a `securityGate` outcome. The gate is `FAILED` when Critical or High findings are reported and `PASSED` otherwise. The summary is intended for centralized management reporting; use the SARIF **Scans** tab or HTML report for finding-level investigation.
 
 ## Optional Blob Upload
 
-Blob upload is disabled by default so the pipeline can run without a storage account. To enable it, set `KICS_UPLOAD_JSON` to `true` and create the following pipeline variables. Store `BLOB_CONNECTION_STRING` as a secret variable or variable-group secret; do not commit the value to YAML:
+The pipeline uploads the current summary on every run. Create the following pipeline variables or variable-group values. `AZURE_SERVICE_CONNECTION` must identify an Azure service connection, and the service connection identity must have **Storage Blob Data Contributor** on the storage account. Do not store access keys, connection strings, or SAS tokens in the pipeline:
 
 ```text
-KICS_UPLOAD_JSON=true
+AZURE_SERVICE_CONNECTION=<Azure DevOps service connection name>
+KICS_STORAGE_ACCOUNT=<storage account name>
 KICS_STORAGE_CONTAINER=<blob container name>
-BLOB_CONNECTION_STRING=<secret storage connection string>
 ```
 
-The pipeline uses the connection string to authenticate to Blob Storage. It uploads the generated `summary.json`, not the full KICS findings report. JSON summaries are uploaded under:
+The pipeline uses `AzureCLI@2` with `--auth-mode login` to authenticate to Blob Storage. It uploads the generated `summary.json`, not the full KICS findings report. JSON summaries are uploaded under:
 
 ```text
-kics/<pipeline name>/<build number>/summary.json
+current/<sanitized pipeline name>/summary.json
 ```
 
-When upload is disabled, the JSON report remains available in the `kics-json` build artifact and the pipeline records a successful test-mode skip.
+The pipeline name is derived from `Build.DefinitionName`; spaces and unsafe characters are replaced with hyphens. The scan reports remain available in Azure DevOps artifacts and the SARIF scan view. Weekly consolidated files are intentionally not created by this pipeline.
