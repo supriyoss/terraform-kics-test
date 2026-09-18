@@ -7,7 +7,7 @@ pool: ADO-Pool
 variables:
   KICS_IMAGE: checkmarx/kics:latest
   KICS_OUTPUT: $(Build.ArtifactStagingDirectory)/kics
-  KICS_UPLOAD_JSON: 'false'
+  KICS_UPLOAD_JSON: 'true'
   # Define KICS_STORAGE_CONTAINER in pipeline variables or a variable group.
   # Define BLOB_CONNECTION_STRING as a secret pipeline variable.
 
