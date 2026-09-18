@@ -1,0 +1,83 @@
+trigger: none
+
+pr: none
+
+pool:
+  vmImage: ADO-Pool
+
+variables:
+  KICS_IMAGE: checkmarx/kics:latest
+  KICS_OUTPUT: $(Build.ArtifactStagingDirectory)/kics
+  KICS_UPLOAD_JSON: 'false'
+  # Define these variables in the pipeline or variable group.
+  AZURE_SERVICE_CONNECTION: ''
+  KICS_STORAGE_ACCOUNT: ''
+  KICS_STORAGE_CONTAINER: ''
+
+steps:
+  - checkout: self
+
+  - bash: |
+      set -euo pipefail
+
+      mkdir -p "$(KICS_OUTPUT)"
+
+      docker run --rm \
+        --volume "$(Build.SourcesDirectory):/path:ro" \
+        --volume "$(KICS_OUTPUT):/output" \
+        "$(KICS_IMAGE)" scan \
+        --ci \
+        --no-color \
+        --path /path \
+        --output-path /output \
+        --output-name results \
+        --report-formats json,html,sarif
+    displayName: Run KICS scan
+    continueOnError: true
+
+  - task: PublishBuildArtifacts@1
+    condition: always()
+    inputs:
+      pathToPublish: $(KICS_OUTPUT)/results.html
+      artifactName: kics-html
+      publishLocation: Container
+    displayName: Publish KICS HTML report
+
+  - task: PublishBuildArtifacts@1
+    condition: always()
+    inputs:
+      pathToPublish: $(KICS_OUTPUT)/results.sarif
+      artifactName: CodeAnalysisLogs
+      publishLocation: Container
+    displayName: Publish KICS SARIF for Azure DevOps scan results
+
+  - task: PublishBuildArtifacts@1
+    condition: always()
+    inputs:
+      pathToPublish: $(KICS_OUTPUT)/results.json
+      artifactName: kics-json
+      publishLocation: Container
+    displayName: Publish KICS JSON report
+
+  - task: AzureCLI@2
+    condition: and(always(), eq(variables['KICS_UPLOAD_JSON'], 'true'))
+    inputs:
+      azureSubscription: $(AZURE_SERVICE_CONNECTION)
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -euo pipefail
+
+        az storage blob upload \
+          --auth-mode login \
+          --account-name "$(KICS_STORAGE_ACCOUNT)" \
+          --container-name "$(KICS_STORAGE_CONTAINER)" \
+          --name "kics/$(Build.DefinitionName)/$(Build.BuildNumber)/results.json" \
+          --file "$(KICS_OUTPUT)/results.json" \
+          --overwrite true
+    displayName: Upload KICS JSON report to Blob Storage
+
+  - bash: |
+      echo "Blob Storage is not configured; keeping the JSON report in the pipeline workspace."
+    condition: and(always(), ne(variables['KICS_UPLOAD_JSON'], 'true'))
+    displayName: Skip Blob Storage upload (test mode)
