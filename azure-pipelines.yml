@@ -45,7 +45,17 @@ jobs:
           KICS_JSON="$(KICS_OUTPUT)/results.json"
           SUMMARY="$(KICS_OUTPUT)/summary.json"
           scan_exit_code="$(cat "$(KICS_OUTPUT)/.kics-exit-code")"
-          PIPELINE_NAME="$BUILD_DEFINITIONNAME"
+          organization="${SYSTEM_COLLECTIONURI:-}"
+          project="${SYSTEM_TEAMPROJECT:-}"
+          repository="${BUILD_REPOSITORY_NAME:-}"
+          branch="${BUILD_SOURCEBRANCHNAME:-}"
+          commit="${BUILD_SOURCEVERSION:-}"
+          pipeline_name="${BUILD_DEFINITIONNAME:-pipeline}"
+          pipeline_id="${BUILD_DEFINITIONID:-${SYSTEM_DEFINITIONID:-}}"
+          build_id="${BUILD_BUILDID:-}"
+          build_number="${BUILD_BUILDNUMBER:-}"
+          build_url="${organization}${project}/_build/results?buildId=${build_id}"
+          PIPELINE_NAME="$pipeline_name"
           SAFE_PIPELINE_NAME="$(echo "$PIPELINE_NAME" | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
           SAFE_PIPELINE_NAME="${SAFE_PIPELINE_NAME:-pipeline}"
 
@@ -63,16 +73,16 @@ jobs:
           esac
 
           jq \
-            --arg organization "$SYSTEM_COLLECTIONURI" \
-            --arg project "$SYSTEM_TEAMPROJECT" \
-            --arg repository "$BUILD_REPOSITORY_NAME" \
-            --arg branch "$BUILD_SOURCEBRANCHNAME" \
-            --arg commit "$BUILD_SOURCEVERSION" \
-            --arg pipeline "$BUILD_DEFINITIONNAME" \
-            --arg pipelineId "$BUILD_DEFINITIONID" \
-            --arg buildId "$BUILD_BUILDID" \
-            --arg buildNumber "$BUILD_BUILDNUMBER" \
-            --arg buildUrl "${SYSTEM_COLLECTIONURI}${SYSTEM_TEAMPROJECT}/_build/results?buildId=${BUILD_BUILDID}" \
+            --arg organization "$organization" \
+            --arg project "$project" \
+            --arg repository "$repository" \
+            --arg branch "$branch" \
+            --arg commit "$commit" \
+            --arg pipeline "$pipeline_name" \
+            --arg pipelineId "$pipeline_id" \
+            --arg buildId "$build_id" \
+            --arg buildNumber "$build_number" \
+            --arg buildUrl "$build_url" \
             --arg pipelineName "$SAFE_PIPELINE_NAME" \
             '{
               organization: $organization,
@@ -81,7 +91,7 @@ jobs:
               branch: $branch,
               commit: $commit,
               pipeline: $pipeline,
-              pipelineId: ($pipelineId | tonumber),
+              pipelineId: (if $pipelineId == "" then null else ($pipelineId | tonumber?) end),
               buildId: $buildId,
               buildNumber: $buildNumber,
               buildUrl: $buildUrl,
@@ -141,7 +151,7 @@ jobs:
           inlineScript: |
             set -euo pipefail
 
-            PIPELINE_NAME="$BUILD_DEFINITIONNAME"
+            PIPELINE_NAME="${BUILD_DEFINITIONNAME:-pipeline}"
             SAFE_PIPELINE_NAME="$(echo "$PIPELINE_NAME" | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
             SAFE_PIPELINE_NAME="${SAFE_PIPELINE_NAME:-pipeline}"
 
