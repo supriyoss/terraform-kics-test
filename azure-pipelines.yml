@@ -8,10 +8,8 @@ variables:
   KICS_IMAGE: checkmarx/kics:latest
   KICS_OUTPUT: $(Build.ArtifactStagingDirectory)/kics
   KICS_UPLOAD_JSON: 'false'
-  # Define these variables in the pipeline or variable group.
-  AZURE_SERVICE_CONNECTION: ''
-  KICS_STORAGE_ACCOUNT: ''
-  KICS_STORAGE_CONTAINER: ''
+  # Define KICS_STORAGE_CONTAINER in pipeline variables or a variable group.
+  # Define BLOB_CONNECTION_STRING as a secret pipeline variable.
 
 jobs:
   - job: KicsSecurityScan
@@ -103,22 +101,23 @@ jobs:
           publishLocation: Container
         displayName: Publish KICS JSON report
 
-      - task: AzureCLI@2
-        condition: and(always(), eq(variables['KICS_UPLOAD_JSON'], 'true'))
-        inputs:
-          azureSubscription: $(AZURE_SERVICE_CONNECTION)
-          scriptType: bash
-          scriptLocation: inlineScript
-          inlineScript: |
-            set -euo pipefail
+      - bash: |
+          set -euo pipefail
 
-            az storage blob upload \
-              --auth-mode login \
-              --account-name "$(KICS_STORAGE_ACCOUNT)" \
-              --container-name "$(KICS_STORAGE_CONTAINER)" \
-              --name "kics/$(Build.DefinitionName)/$(Build.BuildNumber)/results.json" \
-              --file "$(KICS_OUTPUT)/results.json" \
-              --overwrite true
+          if [[ -z "${BLOB_CONNECTION_STRING:-}" ]]; then
+            echo 'No Blob connection string was supplied.' >&2
+            exit 1
+          fi
+
+          az storage blob upload \
+            --connection-string "$BLOB_CONNECTION_STRING" \
+            --container-name "$(KICS_STORAGE_CONTAINER)" \
+            --name "kics/$(Build.DefinitionName)/$(Build.BuildNumber)/results.json" \
+            --file "$(KICS_OUTPUT)/results.json" \
+            --overwrite true
+        env:
+          BLOB_CONNECTION_STRING: $(BLOB_CONNECTION_STRING)
+        condition: and(always(), eq(variables['KICS_UPLOAD_JSON'], 'true'))
         displayName: Upload KICS JSON report to Blob Storage
 
       - bash: |

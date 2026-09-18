@@ -47,16 +47,15 @@ Category totals count each affected file reported by KICS. The summary is intend
 
 ## Optional Blob Upload
 
-Blob upload is disabled by default so the pipeline can run without a storage account. To enable it, set `KICS_UPLOAD_JSON` to `true` and provide these pipeline variables or variable-group values:
+Blob upload is disabled by default so the pipeline can run without a storage account. To enable it, set `KICS_UPLOAD_JSON` to `true` and create the following pipeline variables. Store `BLOB_CONNECTION_STRING` as a secret variable or variable-group secret; do not commit the value to YAML:
 
 ```text
 KICS_UPLOAD_JSON=true
-AZURE_SERVICE_CONNECTION=<Azure DevOps service connection name>
-KICS_STORAGE_ACCOUNT=<storage account name>
 KICS_STORAGE_CONTAINER=<blob container name>
+BLOB_CONNECTION_STRING=<secret storage connection string>
 ```
 
-The service connection identity needs the **Storage Blob Data Contributor** role on the target storage account or container. JSON reports are uploaded under:
+The pipeline uses the connection string to authenticate to Blob Storage. JSON reports are uploaded under:
 
 ```text
 kics/<pipeline name>/<build number>/results.json
