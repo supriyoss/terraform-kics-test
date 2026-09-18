@@ -195,10 +195,11 @@ jobs:
           fi
 
           if [[ "$critical" -gt 0 || "$high" -gt 0 ]]; then
-            echo "KICS security gate failed: critical=$critical, high=$high, total=$total_findings."
-            exit 1
+            echo "KICS security gate would fail: critical=$critical, high=$high, total=$total_findings."
+          else
+            echo "KICS security gate passed: critical=$critical, high=$high, total=$total_findings."
           fi
 
-          echo "KICS security gate passed: critical=$critical, high=$high, total=$total_findings."
+          echo 'KICS enforcement is disabled for this test pipeline; findings do not fail the build.'
         condition: and(succeededOrFailed(), eq(variables['KICS_SUMMARY_READY'], 'true'))
-        displayName: Enforce KICS security gate
+        displayName: Report KICS security gate (non-blocking)

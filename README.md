@@ -37,7 +37,7 @@ The extension is separate from [GitHub Advanced Security for Azure DevOps](https
 
 ### Management summary
 
-After every scan, the pipeline generates `summary.json` with Azure DevOps metadata, KICS version, scan time and start/end times, files scanned and parsed, severity totals, total findings, and a `securityGate` outcome. The gate is `FAILED` when Critical or High findings are reported and `PASSED` otherwise. The summary is intended for centralized management reporting; use the SARIF **Scans** tab or HTML report for finding-level investigation.
+After every scan, the pipeline generates `summary.json` with Azure DevOps metadata, KICS version, scan time and start/end times, files scanned and parsed, severity totals, total findings, and a `securityGate` outcome. The value is `FAILED` when Critical or High findings are reported and `PASSED` otherwise. Enforcement is currently disabled for testing, so findings do not fail the pipeline. The summary is intended for centralized management reporting; use the SARIF **Scans** tab or HTML report for finding-level investigation.
 
 ## Optional Blob Upload
 
