@@ -2,8 +2,7 @@ trigger: none
 
 pr: none
 
-pool:
-  vmImage: ADO-Pool
+pool: ADO-Pool
 
 variables:
   KICS_IMAGE: checkmarx/kics:latest
