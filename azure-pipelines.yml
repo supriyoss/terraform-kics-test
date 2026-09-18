@@ -38,44 +38,53 @@ jobs:
       - bash: |
           set -euo pipefail
 
-          summary_file="$(KICS_OUTPUT)/management-summary.md"
+          KICS_JSON="$(KICS_OUTPUT)/results.json"
+          SUMMARY="$(KICS_OUTPUT)/summary.json"
 
-          if [[ ! -f "$(KICS_OUTPUT)/results.json" ]]; then
-            printf '%s\n' '# KICS Management Summary' '' 'The KICS JSON report was not generated.' > "$summary_file"
-            echo "##vso[task.uploadsummary]$summary_file"
-            exit 0
+          if [[ ! -f "$KICS_JSON" ]]; then
+            echo "KICS JSON result not found: $KICS_JSON"
+            exit 1
           fi
 
-          {
-            echo '# KICS Management Summary'
-            echo
-            echo "- **Total findings:** $(jq -r '.total_counter // 0' "$(KICS_OUTPUT)/results.json")"
-            echo "- **Files scanned:** $(jq -r '.files_scanned // 0' "$(KICS_OUTPUT)/results.json")"
-            echo
-            echo '## Findings by Severity'
-            echo
-            echo '| Severity | Findings |'
-            echo '| --- | ---: |'
-            jq -r '.severity_counters // {} | to_entries | sort_by(.key)[] | "| \(.key) | \(.value) |"' "$(KICS_OUTPUT)/results.json"
-            echo
-            echo '## Findings by Category'
-            echo
-            echo '| Category | Findings |'
-            echo '| --- | ---: |'
-            jq -r '
-              [.queries[]? | {category: (.category // "Uncategorized"), findings: ((.files // []) | length)}]
-              | group_by(.category)
-              | map({category: .[0].category, findings: (map(.findings) | add)})
-              | sort_by(-.findings, .category)
-              | .[]
-              | "| \(.category) | \(.findings) |"
-            ' "$(KICS_OUTPUT)/results.json"
-          } > "$summary_file"
+          jq \
+            --arg organization "$(System.CollectionUri)" \
+            --arg project "$(System.TeamProject)" \
+            --arg repository "$(Build.Repository.Name)" \
+            --arg branch "$(Build.SourceBranchName)" \
+            --arg commit "$(Build.SourceVersion)" \
+            --arg pipeline "$(Build.DefinitionName)" \
+            --arg buildId "$(Build.BuildId)" \
+            --arg buildNumber "$(Build.BuildNumber)" \
+            --arg buildUrl "$(System.CollectionUri)$(System.TeamProject)/_build/results?buildId=$(Build.BuildId)" \
+            '{
+              organization: $organization,
+              project: $project,
+              repository: $repository,
+              branch: $branch,
+              commit: $commit,
+              pipeline: $pipeline,
+              buildId: $buildId,
+              buildNumber: $buildNumber,
+              buildUrl: $buildUrl,
+              kicsVersion: .kics_version,
+              scanStart: .start,
+              scanEnd: .end,
+              filesScanned: .files_scanned,
+              filesParsed: .files_parsed,
+              critical: (.severity_counters.CRITICAL // 0),
+              high: (.severity_counters.HIGH // 0),
+              medium: (.severity_counters.MEDIUM // 0),
+              low: (.severity_counters.LOW // 0),
+              info: (.severity_counters.INFO // 0),
+              totalFindings: (.total_counter // 0),
+              securityGate: (if (.total_counter // 0) > 0 then "FAILED" else "PASSED" end)
+            }' \
+            "$KICS_JSON" > "$SUMMARY"
 
-          echo "##vso[task.uploadsummary]$summary_file"
+          echo 'Generated KICS summary:'
+          cat "$SUMMARY"
         condition: always()
-        continueOnError: true
-        displayName: Publish KICS management summary
+        displayName: Generate KICS Scan Summary
 
       - task: PublishBuildArtifacts@1
         condition: always()
@@ -112,8 +121,8 @@ jobs:
           az storage blob upload \
             --connection-string "$BLOB_CONNECTION_STRING" \
             --container-name "$(KICS_STORAGE_CONTAINER)" \
-            --name "kics/$(Build.DefinitionName)/$(Build.BuildNumber)/results.json" \
-            --file "$(KICS_OUTPUT)/results.json" \
+            --name "kics/$(Build.DefinitionName)/$(Build.BuildNumber)/summary.json" \
+            --file "$(KICS_OUTPUT)/summary.json" \
             --overwrite true
         env:
           BLOB_CONNECTION_STRING: $(BLOB_CONNECTION_STRING)

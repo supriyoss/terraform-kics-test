@@ -37,13 +37,7 @@ The extension is separate from [GitHub Advanced Security for Azure DevOps](https
 
 ### Management summary
 
-The pipeline also publishes a Markdown summary to the run's **Summary** tab. It shows:
-
-- Total findings and files scanned
-- Findings grouped by severity
-- Findings grouped by KICS category, such as Access Control, Encryption, and Networking and Firewall
-
-Category totals count each affected file reported by KICS. The summary is intended for management reporting; use the SARIF **Scans** tab or HTML report for finding-level investigation.
+After every scan, the pipeline generates `summary.json` with Azure DevOps metadata, KICS version, scan start/end times, files scanned and parsed, severity totals, total findings, and a `securityGate` outcome. The gate is `FAILED` when KICS reports one or more findings and `PASSED` when no findings are reported. The summary is intended for centralized management reporting; use the SARIF **Scans** tab or HTML report for finding-level investigation.
 
 ## Optional Blob Upload
 
@@ -55,10 +49,10 @@ KICS_STORAGE_CONTAINER=<blob container name>
 BLOB_CONNECTION_STRING=<secret storage connection string>
 ```
 
-The pipeline uses the connection string to authenticate to Blob Storage. JSON reports are uploaded under:
+The pipeline uses the connection string to authenticate to Blob Storage. It uploads the generated `summary.json`, not the full KICS findings report. JSON summaries are uploaded under:
 
 ```text
-kics/<pipeline name>/<build number>/results.json
+kics/<pipeline name>/<build number>/summary.json
 ```
 
 When upload is disabled, the JSON report remains available in the `kics-json` build artifact and the pipeline records a successful test-mode skip.
