@@ -45,7 +45,7 @@ jobs:
           KICS_JSON="$(KICS_OUTPUT)/results.json"
           SUMMARY="$(KICS_OUTPUT)/summary.json"
           scan_exit_code="$(cat "$(KICS_OUTPUT)/.kics-exit-code")"
-          PIPELINE_NAME="$(Build.DefinitionName)"
+          PIPELINE_NAME="$BUILD_DEFINITIONNAME"
           SAFE_PIPELINE_NAME="$(echo "$PIPELINE_NAME" | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
           SAFE_PIPELINE_NAME="${SAFE_PIPELINE_NAME:-pipeline}"
 
@@ -63,16 +63,16 @@ jobs:
           esac
 
           jq \
-            --arg organization "$(System.CollectionUri)" \
-            --arg project "$(System.TeamProject)" \
-            --arg repository "$(Build.Repository.Name)" \
-            --arg branch "$(Build.SourceBranchName)" \
-            --arg commit "$(Build.SourceVersion)" \
-            --arg pipeline "$(Build.DefinitionName)" \
-            --arg pipelineId "$(Build.DefinitionID)" \
-            --arg buildId "$(Build.BuildId)" \
-            --arg buildNumber "$(Build.BuildNumber)" \
-            --arg buildUrl "$(System.CollectionUri)$(System.TeamProject)/_build/results?buildId=$(Build.BuildId)" \
+            --arg organization "$SYSTEM_COLLECTIONURI" \
+            --arg project "$SYSTEM_TEAMPROJECT" \
+            --arg repository "$BUILD_REPOSITORY_NAME" \
+            --arg branch "$BUILD_SOURCEBRANCHNAME" \
+            --arg commit "$BUILD_SOURCEVERSION" \
+            --arg pipeline "$BUILD_DEFINITIONNAME" \
+            --arg pipelineId "$BUILD_DEFINITIONID" \
+            --arg buildId "$BUILD_BUILDID" \
+            --arg buildNumber "$BUILD_BUILDNUMBER" \
+            --arg buildUrl "${SYSTEM_COLLECTIONURI}${SYSTEM_TEAMPROJECT}/_build/results?buildId=${BUILD_BUILDID}" \
             --arg pipelineName "$SAFE_PIPELINE_NAME" \
             '{
               organization: $organization,
@@ -109,7 +109,7 @@ jobs:
         displayName: Generate KICS Scan Summary
 
       - task: PublishBuildArtifacts@1
-        condition: always()
+        condition: and(succeededOrFailed(), eq(variables['KICS_SUMMARY_READY'], 'true'))
         inputs:
           pathToPublish: $(KICS_OUTPUT)/results.html
           artifactName: kics-html
@@ -117,7 +117,7 @@ jobs:
         displayName: Publish KICS HTML report
 
       - task: PublishBuildArtifacts@1
-        condition: always()
+        condition: and(succeededOrFailed(), eq(variables['KICS_SUMMARY_READY'], 'true'))
         inputs:
           pathToPublish: $(KICS_OUTPUT)/results.sarif
           artifactName: CodeAnalysisLogs
@@ -125,7 +125,7 @@ jobs:
         displayName: Publish KICS SARIF for Azure DevOps scan results
 
       - task: PublishBuildArtifacts@1
-        condition: always()
+        condition: and(succeededOrFailed(), eq(variables['KICS_SUMMARY_READY'], 'true'))
         inputs:
           pathToPublish: $(KICS_OUTPUT)/results.json
           artifactName: kics-json
@@ -141,7 +141,7 @@ jobs:
           inlineScript: |
             set -euo pipefail
 
-            PIPELINE_NAME="$(Build.DefinitionName)"
+            PIPELINE_NAME="$BUILD_DEFINITIONNAME"
             SAFE_PIPELINE_NAME="$(echo "$PIPELINE_NAME" | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
             SAFE_PIPELINE_NAME="${SAFE_PIPELINE_NAME:-pipeline}"
 
