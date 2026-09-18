@@ -43,7 +43,7 @@ jobs:
           set -euo pipefail
 
           KICS_JSON="$(KICS_OUTPUT)/results.json"
-          SUMMARY="$(KICS_OUTPUT)/summary.json"
+          SUMMARY="$(KICS_OUTPUT)/current.json"
           scan_exit_code="$(cat "$(KICS_OUTPUT)/.kics-exit-code")"
           organization="${SYSTEM_COLLECTIONURI:-}"
           project="${SYSTEM_TEAMPROJECT:-}"
@@ -159,8 +159,8 @@ jobs:
               --auth-mode login \
               --account-name "$(KICS_STORAGE_ACCOUNT)" \
               --container-name "$(KICS_STORAGE_CONTAINER)" \
-              --name "current/$SAFE_PIPELINE_NAME/summary.json" \
-              --file "$(KICS_OUTPUT)/summary.json" \
+              --name "current/$SAFE_PIPELINE_NAME/current.json" \
+              --file "$(KICS_OUTPUT)/current.json" \
               --overwrite true
         displayName: Upload current KICS summary to Blob Storage
 
@@ -168,9 +168,9 @@ jobs:
           set -euo pipefail
 
           scan_exit_code="$(cat "$(KICS_OUTPUT)/.kics-exit-code")"
-          total_findings="$(jq -r '.totalFindings // 0' "$(KICS_OUTPUT)/summary.json")"
-          critical="$(jq -r '.critical // 0' "$(KICS_OUTPUT)/summary.json")"
-          high="$(jq -r '.high // 0' "$(KICS_OUTPUT)/summary.json")"
+          total_findings="$(jq -r '.totalFindings // 0' "$(KICS_OUTPUT)/current.json")"
+          critical="$(jq -r '.critical // 0' "$(KICS_OUTPUT)/current.json")"
+          high="$(jq -r '.high // 0' "$(KICS_OUTPUT)/current.json")"
 
           if [[ "$scan_exit_code" -eq 70 || "$scan_exit_code" -eq 126 || "$scan_exit_code" -eq 130 ]]; then
             echo "KICS execution failed with exit code $scan_exit_code; reporting is not a security finding result." >&2
