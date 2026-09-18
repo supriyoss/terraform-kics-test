@@ -142,8 +142,25 @@ jobs:
           publishLocation: Container
         displayName: Publish KICS JSON report
 
-      - task: AzureCLI@2
+      - bash: |
+          set -euo pipefail
+
+          missing=()
+          [[ -n "${AZURE_SERVICE_CONNECTION:-}" ]] || missing+=(AZURE_SERVICE_CONNECTION)
+          [[ -n "${KICS_STORAGE_ACCOUNT:-}" ]] || missing+=(KICS_STORAGE_ACCOUNT)
+          [[ -n "${KICS_STORAGE_CONTAINER:-}" ]] || missing+=(KICS_STORAGE_CONTAINER)
+
+          if [[ "${#missing[@]}" -gt 0 ]]; then
+            echo "Missing required pipeline variables: ${missing[*]}" >&2
+            echo 'Configure them in Azure DevOps pipeline variables or a linked variable group.' >&2
+            echo 'AZURE_SERVICE_CONNECTION must be the exact Azure DevOps service connection name.' >&2
+            exit 1
+          fi
         condition: and(succeededOrFailed(), eq(variables['KICS_SUMMARY_READY'], 'true'))
+        displayName: Validate Azure Blob reporting configuration
+
+      - task: AzureCLI@2
+        condition: and(succeeded(), eq(variables['KICS_SUMMARY_READY'], 'true'))
         inputs:
           azureSubscription: $(AZURE_SERVICE_CONNECTION)
           scriptType: bash
