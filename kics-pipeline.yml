@@ -18,6 +18,9 @@ variables:
   # Define these in pipeline variables or a linked variable group.
   # KICS_STORAGE_ACCOUNT: <storage account name>
   # KICS_STORAGE_CONTAINER: <container name>
+  # Define these after the custom Azure DevOps dashboard widget has been created.
+  # ADO_DASHBOARD_ID: <dashboard GUID>
+  # ADO_WIDGET_ID: <widget GUID>
 
 jobs:
   - job: WeeklyAggregation
@@ -117,9 +120,16 @@ jobs:
 
           OUTPUT_DIR="$(Pipeline.Workspace)/weekly-output"
           WEEK_ENDING="$(date -u +%F)"
+          GENERATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-          jq --arg weekEnding "$WEEK_ENDING" '
-            . + {weekEnding: $weekEnding}
+          jq \
+            --arg weekEnding "$WEEK_ENDING" \
+            --arg generatedAt "$GENERATED_AT" '
+            . + {
+              weekEnding: $weekEnding,
+              generatedAt: $generatedAt,
+              reportingPeriod: "weekly"
+            }
             | .securityGates.passRate = (
                 if .pipelinesMonitored > 0
                 then ((.securityGates.passed / .pipelinesMonitored) * 100)
@@ -151,13 +161,94 @@ jobs:
               --auth-mode login \
               --overwrite true
 
+  - job: UpdateDashboard
+    displayName: Update KICS Dashboard
+    dependsOn: WeeklyAggregation
+    condition: succeeded()
+    steps:
+      - task: AzureCLI@2
+        displayName: Download Weekly Summary for Dashboard
+        inputs:
+          azureSubscription: $(AZURE_SERVICE_CONNECTION)
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            set -euo pipefail
+
+            WEEK_ENDING="$(date -u +%F)"
+            OUTPUT_DIR="$(Pipeline.Workspace)/dashboard-input"
+
+            rm -rf "$OUTPUT_DIR"
+            mkdir -p "$OUTPUT_DIR"
+
+            az storage blob download \
+              --account-name "$(KICS_STORAGE_ACCOUNT)" \
+              --container-name "$(KICS_STORAGE_CONTAINER)" \
+              --name "weekly-data/${WEEK_ENDING}/summary.json" \
+              --file "$OUTPUT_DIR/summary.json" \
+              --auth-mode login \
+              --no-progress
+
+            test -s "$OUTPUT_DIR/summary.json" || {
+              echo 'Weekly summary was not downloaded or is empty.' >&2
+              exit 1
+            }
+
+      - bash: |
+          set -euo pipefail
+
+          command -v jq >/dev/null 2>&1 || {
+            echo 'jq is required on the self-hosted agent but was not found.' >&2
+            exit 1
+          }
+
+          : "${ADO_DASHBOARD_ID:?ADO_DASHBOARD_ID pipeline variable is required}"
+          : "${ADO_WIDGET_ID:?ADO_WIDGET_ID pipeline variable is required}"
+          : "${SYSTEM_ACCESSTOKEN:?System.AccessToken is not available}"
+
+          SUMMARY_FILE="$(Pipeline.Workspace)/dashboard-input/summary.json"
+
+          # Widget settings is a string, so compact the weekly JSON and let jq
+          # JSON-encode it safely inside the PATCH body.
+          SETTINGS_JSON="$(jq -c . "$SUMMARY_FILE")"
+
+          PATCH_BODY="$(
+            jq -n               --arg settings "$SETTINGS_JSON"               '{
+                settings: $settings
+              }'
+          )"
+
+          API_URL="$(System.CollectionUri)$(System.TeamProject)/_apis/dashboard/dashboards/${ADO_DASHBOARD_ID}/widgets/${ADO_WIDGET_ID}?api-version=7.1-preview.2"
+
+          echo 'Updating Azure DevOps KICS dashboard widget with the weekly snapshot...'
+
+          HTTP_STATUS="$(
+            curl --silent --show-error               --output "$(Pipeline.Workspace)/dashboard-update-response.json"               --write-out '%{http_code}'               --request PATCH               --header "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}"               --header 'Content-Type: application/json'               --data "$PATCH_BODY"               "$API_URL"
+          )"
+
+          if [[ "$HTTP_STATUS" != "200" ]]; then
+            echo "Dashboard widget update failed with HTTP status ${HTTP_STATUS}." >&2
+            cat "$(Pipeline.Workspace)/dashboard-update-response.json" >&2 || true
+            exit 1
+          fi
+
+          echo 'Dashboard widget updated successfully.'
+        displayName: Update Azure DevOps Widget Settings
+        env:
+          ADO_DASHBOARD_ID: $(ADO_DASHBOARD_ID)
+          ADO_WIDGET_ID: $(ADO_WIDGET_ID)
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
   - job: TriggerWeeklyEmail
     displayName: Trigger Weekly Email
-    dependsOn: WeeklyAggregation
+    dependsOn:
+      - WeeklyAggregation
+      - UpdateDashboard
     condition: succeeded()
     steps:
       - bash: |
           echo 'Placeholder only.'
           echo 'Future implementation will trigger the Logic App'
-          echo 'to send the weekly consolidated KICS report.'
+          echo 'using the same weekly-data/YYYY-MM-DD/summary.json snapshot'
+          echo 'that was used to update the Azure DevOps dashboard.'
         displayName: Logic App Trigger Placeholder
