@@ -22,270 +22,283 @@ variables:
   # ADO_DASHBOARD_ID: <dashboard GUID>
   # ADO_WIDGET_ID: <widget GUID>
 
-jobs:
-  - job: WeeklyAggregation
-    displayName: Weekly KICS Aggregation
-    steps:
-      - bash: |
-          set -euo pipefail
+stages:
+  - stage: AggregateData
+    displayName: Aggregate Data
+    jobs:
+      - job: WeeklyAggregation
+        displayName: Weekly KICS Aggregation
+        steps:
+          - bash: |
+              set -euo pipefail
 
-          command -v jq >/dev/null 2>&1 || {
-            echo 'jq is required on the self-hosted agent but was not found.' >&2
-            exit 1
-          }
-
-          rm -rf "$(Pipeline.Workspace)/kics-current"
-          mkdir -p "$(Pipeline.Workspace)/kics-current"
-
-          echo 'Downloading current KICS summaries...'
-        displayName: Validate weekly aggregation prerequisites
-
-      - task: AzureCLI@2
-        displayName: Download Current KICS Data
-        inputs:
-          azureSubscription: $(AZURE_SERVICE_CONNECTION)
-          scriptType: bash
-          scriptLocation: inlineScript
-          inlineScript: |
-            set -euo pipefail
-
-            az storage blob download-batch \
-              --account-name "$(KICS_STORAGE_ACCOUNT)" \
-              --source "$(KICS_STORAGE_CONTAINER)" \
-              --destination "$(Pipeline.Workspace)/kics-current" \
-              --pattern 'current/*/current.json' \
-              --auth-mode login \
-              --no-progress
-
-            echo 'Downloaded files:'
-            find "$(Pipeline.Workspace)/kics-current" -name current.json -type f -print
-
-      - bash: |
-          set -euo pipefail
-
-          ROOT="$(Pipeline.Workspace)/kics-current"
-          OUTPUT_DIR="$(Pipeline.Workspace)/weekly-output"
-          mkdir -p "$OUTPUT_DIR"
-
-          mapfile -t FILES < <(find "$ROOT" -name current.json -type f | sort)
-
-          if [[ "${#FILES[@]}" -eq 0 ]]; then
-            echo 'No current.json files were downloaded; refusing to create an empty weekly report.' >&2
-            exit 1
-          fi
-
-          echo "Found ${#FILES[@]} pipeline summaries."
-
-          jq -s '
-            {
-              pipelinesMonitored: length,
-              currentState: {
-                critical: (map(.critical // 0) | add),
-                high: (map(.high // 0) | add),
-                medium: (map(.medium // 0) | add),
-                low: (map(.low // 0) | add),
-                info: (map(.info // 0) | add)
-              },
-              securityGates: {
-                passed: (map(select((.securityGate // "") == "PASSED")) | length),
-                failed: (map(select((.securityGate // "") == "FAILED")) | length)
-              },
-              pipelines: map({
-                repository,
-                pipelineId,
-                pipelineName,
-                buildId,
-                buildNumber,
-                branch,
-                commit,
-                scanTime,
-                kicsVersion,
-                critical,
-                high,
-                medium,
-                low,
-                info,
-                totalFindings,
-                securityGate,
-                buildUrl
-              })
-            }
-          ' "${FILES[@]}" > "$OUTPUT_DIR/summary-base.json"
-
-          cat "$OUTPUT_DIR/summary-base.json"
-        displayName: Aggregate KICS Summaries
-
-      - bash: |
-          set -euo pipefail
-
-          OUTPUT_DIR="$(Pipeline.Workspace)/weekly-output"
-          WEEK_ENDING="$(date -u +%F)"
-          GENERATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-          jq \
-            --arg weekEnding "$WEEK_ENDING" \
-            --arg generatedAt "$GENERATED_AT" '
-            . + {
-              weekEnding: $weekEnding,
-              generatedAt: $generatedAt,
-              reportingPeriod: "weekly"
-            }
-            | .securityGates.passRate = (
-                if .pipelinesMonitored > 0
-                then ((.securityGates.passed / .pipelinesMonitored) * 100)
-                else 0
-                end
-              )
-          ' "$OUTPUT_DIR/summary-base.json" > "$OUTPUT_DIR/summary.json"
-
-          echo 'Generated weekly summary:'
-          cat "$OUTPUT_DIR/summary.json"
-        displayName: Create Weekly Summary
-
-      - task: AzureCLI@2
-        displayName: Upload Weekly Summary
-        inputs:
-          azureSubscription: $(AZURE_SERVICE_CONNECTION)
-          scriptType: bash
-          scriptLocation: inlineScript
-          inlineScript: |
-            set -euo pipefail
-
-            WEEK_ENDING="$(date -u +%F)"
-
-            az storage blob upload \
-              --account-name "$(KICS_STORAGE_ACCOUNT)" \
-              --container-name "$(KICS_STORAGE_CONTAINER)" \
-              --name "weekly-data/${WEEK_ENDING}/summary.json" \
-              --file "$(Pipeline.Workspace)/weekly-output/summary.json" \
-              --auth-mode login \
-              --overwrite true
-
-  - job: UpdateDashboard
-    displayName: Update KICS Dashboard
-    dependsOn: WeeklyAggregation
-    condition: succeeded()
-    steps:
-      - task: AzureCLI@2
-        displayName: Download Weekly Summary for Dashboard
-        inputs:
-          azureSubscription: $(AZURE_SERVICE_CONNECTION)
-          scriptType: bash
-          scriptLocation: inlineScript
-          inlineScript: |
-            set -euo pipefail
-
-            WEEK_ENDING="$(date -u +%F)"
-            OUTPUT_DIR="$(Pipeline.Workspace)/dashboard-input"
-
-            rm -rf "$OUTPUT_DIR"
-            mkdir -p "$OUTPUT_DIR"
-
-            az storage blob download \
-              --account-name "$(KICS_STORAGE_ACCOUNT)" \
-              --container-name "$(KICS_STORAGE_CONTAINER)" \
-              --name "weekly-data/${WEEK_ENDING}/summary.json" \
-              --file "$OUTPUT_DIR/summary.json" \
-              --auth-mode login \
-              --no-progress
-
-            test -s "$OUTPUT_DIR/summary.json" || {
-              echo 'Weekly summary was not downloaded or is empty.' >&2
-              exit 1
-            }
-
-      - bash: |
-          set -euo pipefail
-
-          command -v jq >/dev/null 2>&1 || {
-            echo 'jq is required on the self-hosted agent but was not found.' >&2
-            exit 1
-          }
-
-          : "${ADO_DASHBOARD_ID:?ADO_DASHBOARD_ID is required}"
-          : "${ADO_WIDGET_ID:?ADO_WIDGET_ID is required}"
-          : "${ADO_TEAM_ID:?ADO_TEAM_ID is required}"
-          : "${SYSTEM_ACCESSTOKEN:?System.AccessToken is not available}"
-
-          SUMMARY_FILE="$(Pipeline.Workspace)/dashboard-input/summary.json"
-
-          WIDGET_URL="$(System.CollectionUri)$(System.TeamProject)/$(ADO_TEAM_ID)/_apis/dashboard/dashboards/$(ADO_DASHBOARD_ID)/widgets/$(ADO_WIDGET_ID)?api-version=7.1-preview.2"
-
-          echo "Getting current widget metadata..."
-
-          curl --silent --show-error \
-            --fail \
-            --header "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
-            "$WIDGET_URL" \
-            > "$(Pipeline.Workspace)/current-widget.json"
-
-          WIDGET_NAME="$(jq -r '.name' "$(Pipeline.Workspace)/current-widget.json")"
-          CONTRIBUTION_ID="$(jq -r '.contributionId' "$(Pipeline.Workspace)/current-widget.json")"
-
-          if [[ -z "$WIDGET_NAME" || "$WIDGET_NAME" == "null" ]]; then
-            echo "Widget name is missing." >&2
-            exit 1
-          fi
-
-          if [[ -z "$CONTRIBUTION_ID" || "$CONTRIBUTION_ID" == "null" ]]; then
-            echo "Widget contributionId is missing." >&2
-            exit 1
-          fi
-
-          SETTINGS_JSON="$(jq -c . "$SUMMARY_FILE")"
-
-          PATCH_BODY="$(
-            jq \
-              --arg settings "$SETTINGS_JSON" \
-              '
-              {
-                id: .id,
-                name: .name,
-                contributionId: .contributionId,
-                settingsVersion: .settingsVersion,
-                position: .position,
-                size: .size,
-                settings: $settings
+              command -v jq >/dev/null 2>&1 || {
+                echo 'jq is required on the self-hosted agent but was not found.' >&2
+                exit 1
               }
-              ' "$(Pipeline.Workspace)/current-widget.json"
-          )"
 
-          echo "Updating Azure DevOps KICS dashboard widget with the weekly snapshot..."
+              rm -rf "$(Pipeline.Workspace)/kics-current"
+              mkdir -p "$(Pipeline.Workspace)/kics-current"
 
-          HTTP_STATUS="$(
-            curl --silent --show-error \
-              --output "$(Pipeline.Workspace)/dashboard-update-response.json" \
-              --write-out '%{http_code}' \
-              --request PATCH \
-              --header "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
-              --header 'Content-Type: application/json' \
-              --data "$PATCH_BODY" \
-              "$WIDGET_URL"
-          )"
+              echo 'Downloading current KICS summaries...'
+            displayName: Validate weekly aggregation prerequisites
 
-          if [[ "$HTTP_STATUS" != "200" ]]; then
-            echo "Dashboard widget update failed with HTTP status ${HTTP_STATUS}." >&2
-            cat "$(Pipeline.Workspace)/dashboard-update-response.json" >&2 || true
-            exit 1
-          fi
+          - task: AzureCLI@2
+            displayName: Download Current KICS Data
+            inputs:
+              azureSubscription: $(AZURE_SERVICE_CONNECTION)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
 
-          echo "Dashboard widget updated successfully."
-        displayName: Update Azure DevOps Widget Settings
-        env:
-          ADO_DASHBOARD_ID: $(ADO_DASHBOARD_ID)
-          ADO_WIDGET_ID: $(ADO_WIDGET_ID)
-          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+                az storage blob download-batch \
+                  --account-name "$(KICS_STORAGE_ACCOUNT)" \
+                  --source "$(KICS_STORAGE_CONTAINER)" \
+                  --destination "$(Pipeline.Workspace)/kics-current" \
+                  --pattern 'current/*/current.json' \
+                  --auth-mode login \
+                  --no-progress
 
-  - job: TriggerWeeklyEmail
-    displayName: Trigger Weekly Email
-    dependsOn:
-      - WeeklyAggregation
-      - UpdateDashboard
+                echo 'Downloaded files:'
+                find "$(Pipeline.Workspace)/kics-current" -name current.json -type f -print
+
+          - bash: |
+              set -euo pipefail
+
+              ROOT="$(Pipeline.Workspace)/kics-current"
+              OUTPUT_DIR="$(Pipeline.Workspace)/weekly-output"
+              mkdir -p "$OUTPUT_DIR"
+
+              mapfile -t FILES < <(find "$ROOT" -name current.json -type f | sort)
+
+              if [[ "${#FILES[@]}" -eq 0 ]]; then
+                echo 'No current.json files were downloaded; refusing to create an empty weekly report.' >&2
+                exit 1
+              fi
+
+              echo "Found ${#FILES[@]} pipeline summaries."
+
+              jq -s '
+                {
+                  pipelinesMonitored: length,
+                  currentState: {
+                    critical: (map(.critical // 0) | add),
+                    high: (map(.high // 0) | add),
+                    medium: (map(.medium // 0) | add),
+                    low: (map(.low // 0) | add),
+                    info: (map(.info // 0) | add)
+                  },
+                  securityGates: {
+                    passed: (map(select((.securityGate // "") == "PASSED")) | length),
+                    failed: (map(select((.securityGate // "") == "FAILED")) | length)
+                  },
+                  pipelines: map({
+                    repository,
+                    pipelineId,
+                    pipelineName,
+                    buildId,
+                    buildNumber,
+                    branch,
+                    commit,
+                    scanTime,
+                    kicsVersion,
+                    critical,
+                    high,
+                    medium,
+                    low,
+                    info,
+                    totalFindings,
+                    securityGate,
+                    buildUrl
+                  })
+                }
+              ' "${FILES[@]}" > "$OUTPUT_DIR/summary-base.json"
+
+              cat "$OUTPUT_DIR/summary-base.json"
+            displayName: Aggregate KICS Summaries
+
+          - bash: |
+              set -euo pipefail
+
+              OUTPUT_DIR="$(Pipeline.Workspace)/weekly-output"
+              WEEK_ENDING="$(date -u +%F)"
+              GENERATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+              jq \
+                --arg weekEnding "$WEEK_ENDING" \
+                --arg generatedAt "$GENERATED_AT" '
+                . + {
+                  weekEnding: $weekEnding,
+                  generatedAt: $generatedAt,
+                  reportingPeriod: "weekly"
+                }
+                | .securityGates.passRate = (
+                    if .pipelinesMonitored > 0
+                    then ((.securityGates.passed / .pipelinesMonitored) * 100)
+                    else 0
+                    end
+                  )
+              ' "$OUTPUT_DIR/summary-base.json" > "$OUTPUT_DIR/summary.json"
+
+              echo 'Generated weekly summary:'
+              cat "$OUTPUT_DIR/summary.json"
+            displayName: Create Weekly Summary
+
+          - task: AzureCLI@2
+            displayName: Upload Weekly Summary
+            inputs:
+              azureSubscription: $(AZURE_SERVICE_CONNECTION)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+
+                WEEK_ENDING="$(date -u +%F)"
+
+                az storage blob upload \
+                  --account-name "$(KICS_STORAGE_ACCOUNT)" \
+                  --container-name "$(KICS_STORAGE_CONTAINER)" \
+                  --name "weekly-data/${WEEK_ENDING}/summary.json" \
+                  --file "$(Pipeline.Workspace)/weekly-output/summary.json" \
+                  --auth-mode login \
+                  --overwrite true
+
+  - stage: PublishDashboard
+    displayName: Publish Dashboard
+    dependsOn: AggregateData
     condition: succeeded()
-    steps:
-      - bash: |
-          echo 'Placeholder only.'
-          echo 'Future implementation will trigger the Logic App'
-          echo 'using the same weekly-data/YYYY-MM-DD/summary.json snapshot'
-          echo 'that was used to update the Azure DevOps dashboard.'
-        displayName: Logic App Trigger Placeholder
+    jobs:
+      - job: UpdateDashboard
+        displayName: Update KICS Dashboard
+        steps:
+          - task: AzureCLI@2
+            displayName: Download Weekly Summary for Dashboard
+            inputs:
+              azureSubscription: $(AZURE_SERVICE_CONNECTION)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+
+                WEEK_ENDING="$(date -u +%F)"
+                OUTPUT_DIR="$(Pipeline.Workspace)/dashboard-input"
+
+                rm -rf "$OUTPUT_DIR"
+                mkdir -p "$OUTPUT_DIR"
+
+                az storage blob download \
+                  --account-name "$(KICS_STORAGE_ACCOUNT)" \
+                  --container-name "$(KICS_STORAGE_CONTAINER)" \
+                  --name "weekly-data/${WEEK_ENDING}/summary.json" \
+                  --file "$OUTPUT_DIR/summary.json" \
+                  --auth-mode login \
+                  --no-progress
+
+                test -s "$OUTPUT_DIR/summary.json" || {
+                  echo 'Weekly summary was not downloaded or is empty.' >&2
+                  exit 1
+                }
+
+          - bash: |
+              set -euo pipefail
+
+              command -v jq >/dev/null 2>&1 || {
+                echo 'jq is required on the self-hosted agent but was not found.' >&2
+                exit 1
+              }
+
+              : "${ADO_DASHBOARD_ID:?ADO_DASHBOARD_ID is required}"
+              : "${ADO_WIDGET_ID:?ADO_WIDGET_ID is required}"
+              : "${ADO_TEAM_ID:?ADO_TEAM_ID is required}"
+              : "${SYSTEM_ACCESSTOKEN:?System.AccessToken is not available}"
+
+              SUMMARY_FILE="$(Pipeline.Workspace)/dashboard-input/summary.json"
+
+              WIDGET_URL="$(System.CollectionUri)$(System.TeamProject)/$(ADO_TEAM_ID)/_apis/dashboard/dashboards/$(ADO_DASHBOARD_ID)/widgets/$(ADO_WIDGET_ID)?api-version=7.1-preview.2"
+
+              echo "Getting current widget metadata..."
+
+              curl --silent --show-error \
+                --fail \
+                --header "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
+                "$WIDGET_URL" \
+                > "$(Pipeline.Workspace)/current-widget.json"
+
+              WIDGET_NAME="$(jq -r '.name' "$(Pipeline.Workspace)/current-widget.json")"
+              CONTRIBUTION_ID="$(jq -r '.contributionId' "$(Pipeline.Workspace)/current-widget.json")"
+
+              if [[ -z "$WIDGET_NAME" || "$WIDGET_NAME" == "null" ]]; then
+                echo "Widget name is missing." >&2
+                exit 1
+              fi
+
+              if [[ -z "$CONTRIBUTION_ID" || "$CONTRIBUTION_ID" == "null" ]]; then
+                echo "Widget contributionId is missing." >&2
+                exit 1
+              fi
+
+              SETTINGS_JSON="$(jq -c . "$SUMMARY_FILE")"
+
+              PATCH_BODY="$(
+                jq \
+                  --arg settings "$SETTINGS_JSON" \
+                  '
+                  {
+                    id: .id,
+                    eTag: .eTag,
+                    name: .name,
+                    contributionId: .contributionId,
+                    settingsVersion: .settingsVersion,
+                    position: .position,
+                    size: .size,
+                    dashboard: {
+                      eTag: .dashboard.eTag
+                    },
+                    settings: $settings
+                  }
+                  ' "$(Pipeline.Workspace)/current-widget.json"
+              )"
+
+              echo "Updating Azure DevOps KICS dashboard widget with the weekly snapshot..."
+
+              HTTP_STATUS="$(
+                curl --silent --show-error \
+                  --output "$(Pipeline.Workspace)/dashboard-update-response.json" \
+                  --write-out '%{http_code}' \
+                  --request PATCH \
+                  --header "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
+                  --header 'Content-Type: application/json' \
+                  --data "$PATCH_BODY" \
+                  "$WIDGET_URL"
+              )"
+
+              if [[ "$HTTP_STATUS" != "200" ]]; then
+                echo "Dashboard widget update failed with HTTP status ${HTTP_STATUS}." >&2
+                cat "$(Pipeline.Workspace)/dashboard-update-response.json" >&2 || true
+                exit 1
+              fi
+
+              echo "Dashboard widget updated successfully."
+            displayName: Update Azure DevOps Widget Settings
+            env:
+              ADO_DASHBOARD_ID: $(ADO_DASHBOARD_ID)
+              ADO_WIDGET_ID: $(ADO_WIDGET_ID)
+              SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+  - stage: Notify
+    displayName: Notify
+    dependsOn:
+      - AggregateData
+      - PublishDashboard
+    condition: succeeded()
+    jobs:
+      - job: TriggerWeeklyEmail
+        displayName: Trigger Weekly Email
+        steps:
+          - bash: |
+              echo 'Placeholder only.'
+              echo 'Future implementation will trigger the Logic App'
+              echo 'using the same weekly-data/YYYY-MM-DD/summary.json snapshot'
+              echo 'that was used to update the Azure DevOps dashboard.'
+            displayName: Logic App Trigger Placeholder
