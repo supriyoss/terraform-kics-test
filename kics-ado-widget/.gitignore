@@ -1,0 +1,14 @@
+# Local/system files
+.DS_Store
+
+# Dependency installs
+node_modules/
+
+# Generated build output
+/dist/
+
+# VSIX packaging artifacts
+*.vsix
+
+# npm debug logs
+npm-debug.log*
