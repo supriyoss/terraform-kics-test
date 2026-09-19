@@ -213,7 +213,11 @@ jobs:
           SETTINGS_JSON="$(jq -c . "$SUMMARY_FILE")"
 
           PATCH_BODY="$(
-            jq -n               --arg settings "$SETTINGS_JSON"               '{
+            jq -n \
+              --arg name "Terraform IaC Security" \
+              --arg settings "$SETTINGS_JSON" \
+              '{
+                name: $name,
                 settings: $settings
               }'
           )"
