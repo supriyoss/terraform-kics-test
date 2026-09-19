@@ -1,0 +1,25 @@
+{
+  "name": "kics-ado-widget",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "webpack --mode production",
+    "package": "npm run build && tfx extension create --manifest-globs vss-extension.json"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "azure-devops-extension-sdk": "^5.0.0"
+  },
+  "devDependencies": {
+    "copy-webpack-plugin": "^14.0.0",
+    "ts-loader": "^9.6.2",
+    "typescript": "^5.9.2",
+    "webpack": "^5.111.1",
+    "webpack-cli": "^7.2.3"
+  }
+}

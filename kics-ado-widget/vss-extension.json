@@ -1,0 +1,76 @@
+{
+  "manifestVersion": 1,
+
+  "id": "kics-security-dashboard",
+
+  "version": "1.0.0",
+
+  "name": "KICS Terraform Security Dashboard",
+
+  "publisher": "supriyoss18",
+
+  "description": "Weekly Terraform KICS security dashboard for Azure DevOps.",
+
+  "categories": [
+    "Azure Pipelines"
+  ],
+
+  "targets": [
+    {
+      "id": "Microsoft.VisualStudio.Services"
+    }
+  ],
+
+  "icons": {
+    "default": "img/logo.png"
+  },
+
+  "contributions": [
+    {
+      "id": "KicsSecurityWidget",
+
+      "type": "ms.vss-dashboards-web.widget",
+
+      "targets": [
+        "ms.vss-dashboards-web.widget-catalog"
+      ],
+
+      "properties": {
+
+        "name": "Terraform IaC Security",
+
+        "description": "Weekly KICS security posture across Terraform pipelines.",
+
+        "previewImageUrl": "img/preview.png",
+
+        "uri": "dist/widget.html",
+
+        "supportedSizes": [
+          {
+            "rowSpan": 3,
+            "columnSpan": 4
+          },
+          {
+            "rowSpan": 4,
+            "columnSpan": 6
+          }
+        ],
+
+        "supportedScopes": [
+          "project_team"
+        ]
+      }
+    }
+  ],
+
+  "files": [
+    {
+      "path": "dist",
+      "addressable": true
+    },
+    {
+      "path": "img",
+      "addressable": true
+    }
+  ]
+}

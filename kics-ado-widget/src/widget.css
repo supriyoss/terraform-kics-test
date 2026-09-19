@@ -1,0 +1,62 @@
+body {
+    margin: 0;
+    font-family: "Segoe UI", Arial, sans-serif;
+}
+
+.widget-container {
+    padding: 16px;
+}
+
+h2 {
+    margin-top: 0;
+}
+
+.subtitle {
+    font-size: 12px;
+    opacity: 0.7;
+    margin-bottom: 16px;
+}
+
+.cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.card {
+    border: 1px solid rgba(128, 128, 128, 0.3);
+    border-radius: 4px;
+    padding: 12px;
+}
+
+.card span {
+    display: block;
+    font-size: 12px;
+}
+
+.card strong {
+    display: block;
+    font-size: 26px;
+    margin-top: 4px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th,
+td {
+    padding: 7px;
+    text-align: left;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.hidden {
+    display: none;
+}
+
+#error {
+    margin-top: 12px;
+}
