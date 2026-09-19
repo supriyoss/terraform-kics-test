@@ -238,8 +238,6 @@ jobs:
               }'
           )"
 
-          API_URL="$(System.CollectionUri)$(System.TeamProject)/$(ADO_TEAM_ID)/_apis/dashboard/dashboards/$(ADO_DASHBOARD_ID)/widgets/$(ADO_WIDGET_ID)?api-version=7.1-preview.2"
-
           echo 'Updating Azure DevOps KICS dashboard widget with the weekly snapshot...'
 
           HTTP_STATUS="$(
