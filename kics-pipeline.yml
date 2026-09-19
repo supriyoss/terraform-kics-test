@@ -211,6 +211,22 @@ jobs:
           # Widget settings is a string, so compact the weekly JSON and let jq
           # JSON-encode it safely inside the PATCH body.
           SETTINGS_JSON="$(jq -c . "$SUMMARY_FILE")"
+          
+          WIDGET_URL="$(System.CollectionUri)$(System.TeamProject)/$(ADO_TEAM_ID)/_apis/dashboard/dashboards/$(ADO_DASHBOARD_ID)/widgets/$(ADO_WIDGET_ID)?api-version=7.1-preview.2"
+
+          curl --silent --show-error \
+            --header "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
+            "$WIDGET_URL" \
+            > "$(Pipeline.Workspace)/current-widget.json"
+
+          WIDGET_NAME="$(
+            jq -r '.name' "$(Pipeline.Workspace)/current-widget.json"
+          )"
+
+          if [[ -z "$WIDGET_NAME" || "$WIDGET_NAME" == "null" ]]; then
+            echo "Unable to determine current widget name." >&2
+            exit 1
+          fi
 
           PATCH_BODY="$(
             jq -n \
@@ -227,7 +243,14 @@ jobs:
           echo 'Updating Azure DevOps KICS dashboard widget with the weekly snapshot...'
 
           HTTP_STATUS="$(
-            curl --silent --show-error               --output "$(Pipeline.Workspace)/dashboard-update-response.json"               --write-out '%{http_code}'               --request PATCH               --header "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}"               --header 'Content-Type: application/json'               --data "$PATCH_BODY"               "$API_URL"
+            curl --silent --show-error \
+              --output "$(Pipeline.Workspace)/dashboard-update-response.json" \
+              --write-out '%{http_code}' \
+              --request PATCH \
+              --header "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
+              --header 'Content-Type: application/json' \
+              --data "$PATCH_BODY" \
+              "$WIDGET_URL"
           )"
 
           if [[ "$HTTP_STATUS" != "200" ]]; then
