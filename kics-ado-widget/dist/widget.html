@@ -1,58 +1,146 @@
-<!doctype html><head><meta charset=utf-8><title>KICS Security Dashboard</title><link rel=stylesheet href=widget.css></head><body>
-    <div class=widget-container>
+<!doctype html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>Terraform IaC Security</title><link rel=stylesheet href=widget.css></head><body>
+    <main class=widget-shell>
 
-        <h2>Terraform IaC Security</h2>
+        <header class=widget-header>
+            <div>
+                <div class=eyebrow>KICS · TERRAFORM DEVSECOPS</div>
+                <h1>Terraform IaC Security</h1>
+                <div class=header-meta>
+                    <span>Week ending <strong id=weekEnding>—</strong></span>
+                    <span class=divider>•</span>
+                    <span>Updated <strong id=lastUpdated>—</strong></span>
+                </div>
+            </div>
 
-        <div id=lastUpdated class=subtitle>
-            Waiting for weekly KICS data...
-        </div>
+            <div class=header-badge>
+                Weekly Security Snapshot
+            </div>
+        </header>
+
+        <section id=emptyState class=state-card>
+            No weekly KICS summary has been published yet.
+        </section>
+
+        <section id=error class="state-card error-card hidden"></section>
 
         <div id=dashboard class=hidden>
 
-            <div class=cards>
+            <section class=kpi-grid>
+                <article class=kpi-card>
+                    <span class=kpi-label>Pipelines</span>
+                    <strong id=pipelines class=kpi-value>0</strong>
+                    <span class=kpi-foot>Monitored</span>
+                </article>
 
-                <div class=card>
-                    <span>Pipelines</span>
-                    <strong id=pipelines>0</strong>
+                <article class="kpi-card danger-card">
+                    <span class=kpi-label>Failed Gates</span>
+                    <strong id=failedGates class=kpi-value>0</strong>
+                    <span class=kpi-foot>Require attention</span>
+                </article>
+
+                <article class="kpi-card critical-card">
+                    <span class=kpi-label>Critical</span>
+                    <strong id=critical class=kpi-value>0</strong>
+                    <span class=kpi-foot>Current findings</span>
+                </article>
+
+                <article class="kpi-card high-card">
+                    <span class=kpi-label>High</span>
+                    <strong id=high class=kpi-value>0</strong>
+                    <span class=kpi-foot>Current findings</span>
+                </article>
+
+                <article class="kpi-card success-card">
+                    <span class=kpi-label>Pass Rate</span>
+                    <strong id=passRate class=kpi-value>0%</strong>
+                    <span class=kpi-foot>Security gates</span>
+                </article>
+            </section>
+
+            <section class=content-grid>
+                <article class="panel severity-panel">
+                    <div class=panel-heading>
+                        <div>
+                            <h2>Severity Overview</h2>
+                            <p>Aggregate findings across the latest pipeline snapshots.</p>
+                        </div>
+                    </div>
+
+                    <div class=severity-list>
+                        <div class=severity-row>
+                            <span class=severity-name>Critical</span>
+                            <div class=severity-track><div id=severity-critical-bar class="severity-fill severity-critical"></div></div>
+                            <strong id=severity-critical-value>0</strong>
+                        </div>
+
+                        <div class=severity-row>
+                            <span class=severity-name>High</span>
+                            <div class=severity-track><div id=severity-high-bar class="severity-fill severity-high"></div></div>
+                            <strong id=severity-high-value>0</strong>
+                        </div>
+
+                        <div class=severity-row>
+                            <span class=severity-name>Medium</span>
+                            <div class=severity-track><div id=severity-medium-bar class="severity-fill severity-medium"></div></div>
+                            <strong id=severity-medium-value>0</strong>
+                        </div>
+
+                        <div class=severity-row>
+                            <span class=severity-name>Low</span>
+                            <div class=severity-track><div id=severity-low-bar class="severity-fill severity-low"></div></div>
+                            <strong id=severity-low-value>0</strong>
+                        </div>
+
+                        <div class=severity-row>
+                            <span class=severity-name>Info</span>
+                            <div class=severity-track><div id=severity-info-bar class="severity-fill severity-info"></div></div>
+                            <strong id=severity-info-value>0</strong>
+                        </div>
+                    </div>
+                </article>
+
+                <article id=attentionSection class="panel attention-panel">
+                    <div class=panel-heading>
+                        <div>
+                            <h2>Attention Required</h2>
+                            <p>Highest-risk pipelines from the current weekly snapshot.</p>
+                        </div>
+                    </div>
+
+                    <div id=attentionList class=attention-list></div>
+                </article>
+            </section>
+
+            <section class="panel pipeline-panel">
+                <div class="panel-heading pipeline-heading">
+                    <div>
+                        <h2>Pipeline Status</h2>
+                        <p>Sorted by failed gate and finding severity.</p>
+                    </div>
+                    <span id=pipelineCountLabel class=count-pill>0 pipelines</span>
                 </div>
 
-                <div class=card>
-                    <span>Failed Gates</span>
-                    <strong id=failedGates>0</strong>
+                <div class=table-wrap>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Pipeline</th>
+                                <th>Critical</th>
+                                <th>High</th>
+                                <th>Medium</th>
+                                <th>Total</th>
+                                <th>Gate</th>
+                            </tr>
+                        </thead>
+                        <tbody id=pipelineRows></tbody>
+                    </table>
                 </div>
-
-                <div class=card>
-                    <span>Critical</span>
-                    <strong id=critical>0</strong>
-                </div>
-
-                <div class=card>
-                    <span>High</span>
-                    <strong id=high>0</strong>
-                </div>
-
-            </div>
-
-            <table>
-                <thead>
-                    <tr>
-                        <th>Pipeline</th>
-                        <th>Critical</th>
-                        <th>High</th>
-                        <th>Medium</th>
-                        <th>Gate</th>
-                    </tr>
-                </thead>
-
-                <tbody id=pipelineRows></tbody>
-            </table>
+            </section>
 
         </div>
-
-        <div id=error></div>
-
-    </div>
+    </main>
 
     <script src=widget.js></script>
+
 
 </body></html>
