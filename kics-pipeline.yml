@@ -202,43 +202,55 @@ jobs:
             exit 1
           }
 
-          : "${ADO_DASHBOARD_ID:?ADO_DASHBOARD_ID pipeline variable is required}"
-          : "${ADO_WIDGET_ID:?ADO_WIDGET_ID pipeline variable is required}"
+          : "${ADO_DASHBOARD_ID:?ADO_DASHBOARD_ID is required}"
+          : "${ADO_WIDGET_ID:?ADO_WIDGET_ID is required}"
+          : "${ADO_TEAM_ID:?ADO_TEAM_ID is required}"
           : "${SYSTEM_ACCESSTOKEN:?System.AccessToken is not available}"
 
           SUMMARY_FILE="$(Pipeline.Workspace)/dashboard-input/summary.json"
 
-          # Widget settings is a string, so compact the weekly JSON and let jq
-          # JSON-encode it safely inside the PATCH body.
-          SETTINGS_JSON="$(jq -c . "$SUMMARY_FILE")"
-          
           WIDGET_URL="$(System.CollectionUri)$(System.TeamProject)/$(ADO_TEAM_ID)/_apis/dashboard/dashboards/$(ADO_DASHBOARD_ID)/widgets/$(ADO_WIDGET_ID)?api-version=7.1-preview.2"
 
+          echo "Getting current widget metadata..."
+
           curl --silent --show-error \
+            --fail \
             --header "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
             "$WIDGET_URL" \
             > "$(Pipeline.Workspace)/current-widget.json"
 
-          WIDGET_NAME="$(
-            jq -r '.name' "$(Pipeline.Workspace)/current-widget.json"
-          )"
+          WIDGET_NAME="$(jq -r '.name' "$(Pipeline.Workspace)/current-widget.json")"
+          CONTRIBUTION_ID="$(jq -r '.contributionId' "$(Pipeline.Workspace)/current-widget.json")"
 
           if [[ -z "$WIDGET_NAME" || "$WIDGET_NAME" == "null" ]]; then
-            echo "Unable to determine current widget name." >&2
+            echo "Widget name is missing." >&2
             exit 1
           fi
 
+          if [[ -z "$CONTRIBUTION_ID" || "$CONTRIBUTION_ID" == "null" ]]; then
+            echo "Widget contributionId is missing." >&2
+            exit 1
+          fi
+
+          SETTINGS_JSON="$(jq -c . "$SUMMARY_FILE")"
+
           PATCH_BODY="$(
-            jq -n \
-              --arg name "Terraform IaC Security" \
+            jq \
               --arg settings "$SETTINGS_JSON" \
-              '{
-                name: $name,
+              '
+              {
+                id: .id,
+                name: .name,
+                contributionId: .contributionId,
+                settingsVersion: .settingsVersion,
+                position: .position,
+                size: .size,
                 settings: $settings
-              }'
+              }
+              ' "$(Pipeline.Workspace)/current-widget.json"
           )"
 
-          echo 'Updating Azure DevOps KICS dashboard widget with the weekly snapshot...'
+          echo "Updating Azure DevOps KICS dashboard widget with the weekly snapshot..."
 
           HTTP_STATUS="$(
             curl --silent --show-error \
@@ -257,7 +269,7 @@ jobs:
             exit 1
           fi
 
-          echo 'Dashboard widget updated successfully.'
+          echo "Dashboard widget updated successfully."
         displayName: Update Azure DevOps Widget Settings
         env:
           ADO_DASHBOARD_ID: $(ADO_DASHBOARD_ID)
