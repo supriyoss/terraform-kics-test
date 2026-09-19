@@ -150,8 +150,18 @@ SDK.ready().then(() => {
                 widgetSettings: any
             ) => {
 
+                console.log(
+                    "Widget settings received:",
+                    widgetSettings
+                );
+
+                console.log(
+                    "Custom settings data:",
+                    widgetSettings?.customSettings?.data
+                );
+
                 render(
-                    widgetSettings?.settings
+                    widgetSettings?.customSettings?.data
                 );
 
                 return {
@@ -163,8 +173,18 @@ SDK.ready().then(() => {
                 widgetSettings: any
             ) => {
 
+                console.log(
+                    "Widget reload settings:",
+                    widgetSettings
+                );
+
+                console.log(
+                    "Custom settings data:",
+                    widgetSettings?.customSettings?.data
+                );
+
                 render(
-                    widgetSettings?.settings
+                    widgetSettings?.customSettings?.data
                 );
 
                 return {
